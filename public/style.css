@@ -1,3 +1,9 @@
+/*
+ * 大月曆預約系統（Calendar Booking System）— 樣式表
+ * @author Yao Yuxuan
+ * @date   2026-08
+ */
+
 :root {
   --primary-color: #7c5cbf;
   --bg-color: #f8f5fd;
@@ -12,6 +18,13 @@ body { font-family: sans-serif; background: var(--bg-color); margin: 0; padding:
 
 *{
   box-sizing: border-box;
+}
+
+.app-footer {
+  text-align: center;
+  color: #9a94a8;
+  font-size: 12px;
+  padding: 8px 0 12px;
 }
 
 /* Header */

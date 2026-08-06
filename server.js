@@ -1,3 +1,8 @@
+/**
+ * 大月曆預約系統（Calendar Booking System）— 後端伺服器
+ * @author Yao Yuxuan
+ * @date   2026-08
+ */
 const express = require('express');
 const cors = require('cors');
 const path = require('path');

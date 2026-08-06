@@ -1,3 +1,9 @@
+/**
+ * 大月曆預約系統（Calendar Booking System）— 前端邏輯
+ * @author Yao Yuxuan
+ * @date   2026-08
+ */
+
 // --- 元素選取與初始化保持不變 ---
 const API_BASE = "/api";
 // 手機模式：僅在「寬度 <900px 且主要輸入為觸控」時啟用，Mac/Windows 桌面（滑鼠/觸控板）一律維持原樣

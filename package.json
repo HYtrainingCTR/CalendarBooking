@@ -2,6 +2,7 @@
   "name": "calendar-booking",
   "version": "1.0.0",
   "description": "Calendar Booking System",
+  "author": "Yao Yuxuan",
   "scripts": {
     "start": "node server.js"
   },
