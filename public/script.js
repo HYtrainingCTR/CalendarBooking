@@ -565,21 +565,7 @@ async function loadAllData() {
                     try { roomColorMap[r.name] = JSON.parse(r.colorData); } catch(e) {}
                 }
             });
-            // 遷移：舊版高飽和色系一律重配成柔和低飽和色系，並持久化（內建房間由 getRoomStyle 覆蓋，不在此處理）
-            const paletteSet = new Set(ROOM_PALETTE.map(c => c.toLowerCase()));
-            const builtInNames = ['VIP Room', 'EDS'];
-            roomList.forEach(r => {
-                if (!r.colorData || builtInNames.includes(r.name)) return;
-                let c; try { c = JSON.parse(r.colorData); } catch(e) { return; }
-                if (!c || !c.border || paletteSet.has(String(c.border).toLowerCase())) return;
-                const color = generateRandomRoomColor();
-                roomColorMap[r.name] = color;
-                if (r.id) fetch(`${API_BASE}/rooms/${r.id}/color`, {
-                    method: "PUT",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ colorData: JSON.stringify(color) })
-                }).catch(() => {});
-            });
+          
             // API sync 完成後，重新套用使用者自訂配色（確保使用者手動挑選的顏色不被遷移覆蓋）
             _loadUserOverrides();
         }
