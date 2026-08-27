@@ -232,24 +232,21 @@ function _refreshRoomMultiFilter() {
     btn.classList.toggle('has-selection', filterRooms.length > 0);
 }
 
-// 隨機生成房間配色函數：先順序取用未使用色，用完才循環
-function generateRandomRoomColor() {
+// 根據房間名稱生成確定性顏色（確保所有電腦顯示相同顏色）
+function generateRandomRoomColor(roomName) {
   const colorPool = ROOM_PALETTE;
-
-  // 取出所有已經被佔用的 border 色
-  const usedColors = Object.values(roomColorMap).map(item => item.border);
-  // 篩選出還沒被使用的顏色
-  const availableColors = colorPool.filter(color => !usedColors.includes(color));
-
-  let border;
-  if (availableColors.length > 0) {
-    // 還有剩餘未使用顏色 → 從剩餘池隨機抽取，保證不重複
-    border = availableColors[Math.floor(Math.random() * availableColors.length)];
-  } else {
-    // 20種全部用完，允許重複，隨機取全部池內顏色
-    border = colorPool[Math.floor(Math.random() * colorPool.length)];
+  
+  // 使用房間名稱的哈希值來確定性地選擇顏色
+  let hash = 0;
+  for (let i = 0; i < roomName.length; i++) {
+    hash = ((hash << 5) - hash) + roomName.charCodeAt(i);
+    hash = hash & hash; // Convert to 32bit integer
   }
-
+  
+  // 使用絕對值確保索引為正數
+  const index = Math.abs(hash) % colorPool.length;
+  const border = colorPool[index];
+  
   const bg = border + "20";
   return {
     bg,
@@ -272,7 +269,7 @@ function getRoomStyle(roomName) {
     }
 
     if (!roomColorMap[roomName]) {
-        const color = generateRandomRoomColor();
+        const color = generateRandomRoomColor(roomName);
         roomColorMap[roomName] = color;
         // 持久化到後端，確保刷新後顏色不變
         const room = roomList.find(r => r.name === roomName);
@@ -572,7 +569,7 @@ async function loadAllData() {
                 if (!r.colorData || builtInNames.includes(r.name)) return;
                 let c; try { c = JSON.parse(r.colorData); } catch(e) { return; }
                 if (!c || !c.border || paletteSet.has(String(c.border).toLowerCase())) return;
-                const color = generateRandomRoomColor();
+                const color = generateRandomRoomColor(r.name);
                 roomColorMap[r.name] = color;
                 if (r.id) fetch(`${API_BASE}/rooms/${r.id}/color`, {
                     method: "PUT",
@@ -900,7 +897,7 @@ function getFilteredData() {
                         }
                     }
             }
-            for (const rName of allNewRooms) { try { const color = generateRandomRoomColor(); await fetch(`${API_BASE}/rooms`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({name:rName,short:'',colorData:JSON.stringify(color)}) }); } catch(e) {} }
+            for (const rName of allNewRooms) { try { const color = generateRandomRoomColor(rName); await fetch(`${API_BASE}/rooms`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({name:rName,short:'',colorData:JSON.stringify(color)}) }); } catch(e) {} }
             for (const eName of allNewEmps) { try { await fetch(`${API_BASE}/employees`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({name:eName}) }); } catch(e) {} }
 
             await loadAllData();
@@ -1293,7 +1290,7 @@ document.querySelectorAll('.short-input').forEach(input=>{
     const val = newRoomInput.value.trim();
     if(!val) return alert("請輸入房間名稱");
     try {
-        const color = generateRandomRoomColor();
+        const color = generateRandomRoomColor(val);
         const res = await fetch(`${API_BASE}/rooms`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
