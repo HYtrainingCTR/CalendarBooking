@@ -1159,18 +1159,31 @@ document.querySelectorAll('.move-btn').forEach(btn => {
         const type = btn.dataset.type;
         const idx = Number(btn.dataset.idx);
         
+        let success = false;
         if (type === 'move-up' && idx > 0) {
             // 交換位置
             [roomList[idx], roomList[idx - 1]] = [roomList[idx - 1], roomList[idx]];
-            await saveRoomOrder();
+            success = await saveRoomOrder();
         } else if (type === 'move-down' && idx < roomList.length - 1) {
             // 交換位置
             [roomList[idx], roomList[idx + 1]] = [roomList[idx + 1], roomList[idx]];
-            await saveRoomOrder();
+            success = await saveRoomOrder();
         }
         
-        renderSettingLists();
-        updateView();
+        if (success) {
+            // 重新加載房間列表以確保與後端同步
+            await loadRooms();
+            renderSettingLists();
+            updateView();
+        } else {
+            // 失敗時恢復原始順序
+            if (type === 'move-up' && idx > 0) {
+                [roomList[idx], roomList[idx - 1]] = [roomList[idx - 1], roomList[idx]];
+            } else if (type === 'move-down' && idx < roomList.length - 1) {
+                [roomList[idx], roomList[idx + 1]] = [roomList[idx + 1], roomList[idx]];
+            }
+            alert('更新房間順序失敗，請重試');
+        }
     };
 });
 
@@ -1186,9 +1199,34 @@ async function saveRoomOrder() {
         const result = await res.json();
         if (!result.ok) {
             console.error('保存房間排序失敗:', result.msg);
+            return false;
         }
+        return true;
     } catch (err) {
         console.error('保存房間排序失敗:', err);
+        return false;
+    }
+}
+
+// 重新加載房間列表
+async function loadRooms() {
+    try {
+        const roomRes = await fetch(`${API_BASE}/rooms`);
+        const roomJson = await roomRes.json();
+        if (roomJson.ok) {
+            roomList = roomJson.data;
+            // 同步 roomColorMap
+            roomList.forEach(r => {
+                if (r.colorData) {
+                    try { roomColorMap[r.name] = JSON.parse(r.colorData); } catch(e) {}
+                }
+            });
+            return true;
+        }
+        return false;
+    } catch (err) {
+        console.error('加載房間列表失敗:', err);
+        return false;
     }
 }
 
