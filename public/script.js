@@ -297,8 +297,8 @@ function showPasswordPrompt(message){
         box.innerHTML = `
             <div style="font-size:14px;margin-bottom:14px;color:#333;">${message}</div>
             <div style="position:relative;margin-bottom:16px;">
-                <input id="pwdModalInput" type="password" placeholder="請輸入密碼" style="width:100%;padding:10px 42px 10px 10px;border:1px solid #ccc;border-radius:6px;font-size:14px;box-sizing:[...]
-                <button id="pwdToggleBtn" type="button" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:18px;color:#888;paddi[...]
+                <input id="pwdModalInput" type="password" placeholder="請輸入密碼" style="width:100%;padding:10px 42px 10px 10px;border:1px solid #ccc;border-radius:6px;font-size:14px;box-sizing:border-box;outline:none;" />
+                <button id="pwdToggleBtn" type="button" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:18px;color:#888;padding:4px;" title="顯示/隱藏密碼">
                     <i class="fa-solid fa-eye"></i>
                 </button>
             </div>
@@ -565,7 +565,21 @@ async function loadAllData() {
                     try { roomColorMap[r.name] = JSON.parse(r.colorData); } catch(e) {}
                 }
             });
-          
+            // 遷移：舊版高飽和色系一律重配成柔和低飽和色系，並持久化（內建房間由 getRoomStyle 覆蓋，不在此處理）
+            const paletteSet = new Set(ROOM_PALETTE.map(c => c.toLowerCase()));
+            const builtInNames = ['VIP Room', 'EDS'];
+            roomList.forEach(r => {
+                if (!r.colorData || builtInNames.includes(r.name)) return;
+                let c; try { c = JSON.parse(r.colorData); } catch(e) { return; }
+                if (!c || !c.border || paletteSet.has(String(c.border).toLowerCase())) return;
+                const color = generateRandomRoomColor();
+                roomColorMap[r.name] = color;
+                if (r.id) fetch(`${API_BASE}/rooms/${r.id}/color`, {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ colorData: JSON.stringify(color) })
+                }).catch(() => {});
+            });
             // API sync 完成後，重新套用使用者自訂配色（確保使用者手動挑選的顏色不被遷移覆蓋）
             _loadUserOverrides();
         }
@@ -662,7 +676,7 @@ function getFilteredData() {
     importTipBtn.onclick = (e) => {
         e.stopPropagation();
         // 固定前置格式說明，每次點擊都顯示
-        let tipText = "【Excel匯入格式規範】\n支援多Sheet匯入，系統會自動偵測每個Sheet的欄位：\n\n📋 Sheet 1「預約」欄位：日期、活動名稱、預約員工、房[...]
+        let tipText = "【Excel匯入格式規範】\n支援多Sheet匯入，系統會自動偵測每個Sheet的欄位：\n\n📋 Sheet 1「預約」欄位：日期、活動名稱、預約員工、房間、開始時間、結束時間（跨日預約結束時間早於開始時間時自動視為隔日結束）\n📋 舊版「預約」格式亦支援：日期（含星期）、活動名、時段（全日/am/pm）、房間、負責人\n📋 Sheet 2「待辦事項」欄位：標題、開始日期、結束日期、開始時間、結束時間、房間、負責人、全日\n📋 Sheet 3「公眾假期」由系統自動抓取，無需匯入\n📋 Sheet 4「員工假期」欄位：員工姓名、開始日期、結束日期(同日=單日)、假期類型(選填)\n\n時間格式：09:00、23:30\n日期格式：2026-01-15（舊格式亦支援 1/03/2025（Fri））\n\n";
 
         if(currentImportInfoList.length > 0){
             tipText += "=== 本次匯入資訊提醒 ===\n\n";
@@ -759,11 +773,11 @@ function getFilteredData() {
                                 return ev.room === roomName && (dateStr+'T'+slot.sTime) < (evEnd+'T'+ev.endTime) && (dateStr+'T'+slot.eTime) > (ev.date+'T'+ev.startTime);
                             });
                             if (isConflict) { totalSkip++; allSkipList.push(`[預約]第${excelRow}行「${name}」：${dateStr} ${roomName} 時段衝突`); return; }
-                            importList.push({ date: dateStr, endDate: dateStr, name: String(name).trim(), employee: empName, room: roomName, startTime: slot.sTime, endTime: slot.eTime, note: '', row: [...]
+                            importList.push({ date: dateStr, endDate: dateStr, name: String(name).trim(), employee: empName, room: roomName, startTime: slot.sTime, endTime: slot.eTime, note: '', row: excelRow });
                             totalSuccess++;
                         });
                         if (importList.length > 0) {
-                            try { const res = await fetch(`${API_BASE}/reservations/batch`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({list:importList}) }); co[...]
+                            try { const res = await fetch(`${API_BASE}/reservations/batch`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({list:importList}) }); const result = await res.json(); if (!result.ok) { totalSkip += importList.length; allSkipList.push("[預約]批量匯入失敗："+result.msg); } else if (result.fail > 0) { totalSuccess -= result.fail; totalSkip += result.fail; if (result.failDetails) result.failDetails.forEach(d => allSkipList.push("[預約]"+d)); } } catch(err) { totalSkip += importList.length; allSkipList.push("[預約]批量匯入失敗："+err.message); }
                         }
 
                     } else if (headers.includes('活動名稱') || headers.includes('預約員工') || headers.includes('預約人')) {
@@ -806,11 +820,11 @@ function getFilteredData() {
                                 return ev.room === roomName && (dateStr+'T'+sTime) < (evEnd+'T'+ev.endTime) && (importEndDate+'T'+eTime) > (ev.date+'T'+ev.startTime);
                             });
                             if (isConflict) { totalSkip++; allSkipList.push(`[預約]第${excelRow}行「${name}」：${dateStr} ${roomName} 時段衝突`); return; }
-                            importList.push({ date: dateStr, endDate: importEndDate, name: String(name).trim(), employee: empName, room: roomName, startTime: sTime, endTime: eTime, note, row: excelRow[...]
+                            importList.push({ date: dateStr, endDate: importEndDate, name: String(name).trim(), employee: empName, room: roomName, startTime: sTime, endTime: eTime, note, row: excelRow });
                             totalSuccess++;
                         });
                         if (importList.length > 0) {
-                            try { const res = await fetch(`${API_BASE}/reservations/batch`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({list:importList}) }); co[...]
+                            try { const res = await fetch(`${API_BASE}/reservations/batch`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({list:importList}) }); const result = await res.json(); if (!result.ok) { totalSkip += importList.length; allSkipList.push("[預約]批量匯入失敗："+result.msg); } else if (result.fail > 0) { totalSuccess -= result.fail; totalSkip += result.fail; if (result.failDetails) result.failDetails.forEach(d => allSkipList.push("[預約]"+d)); } } catch(err) { totalSkip += importList.length; allSkipList.push("[預約]批量匯入失敗："+err.message); }
                         }
 
                     } else if (headers.includes('標題') || headers.includes('開始日期')) {
@@ -848,7 +862,7 @@ function getFilteredData() {
                                 (t.room||'') === room && (t.employee||'') === employee
                             );
                             if (isDuplicate) { totalSkip++; allSkipList.push(`[待辦]「${title}」${startDate} 已存在，跳過`); continue; }
-                            try { await fetch(`${API_BASE}/todos`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({title,startDate,endDate,startTime,endTime,room,em[...]
+                            try { await fetch(`${API_BASE}/todos`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({title,startDate,endDate,startTime,endTime,room,employee,isAllDay}) }); totalSuccess++; } catch(err) { totalSkip++; allSkipList.push(`[待辦]「${title}」匯入失敗：${err.message}`); }
                         }
 
                     } else if (headers.includes('名稱') && headers.includes('日期') && !headers.includes('活動名稱')) {
@@ -882,12 +896,12 @@ function getFilteredData() {
                             totalSuccess++;
                         }
                         if (leaveList.length > 0) {
-                            try { const res = await fetch(`${API_BASE}/employee-leaves/batch`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({list:leaveList}) }); [...]
+                            try { const res = await fetch(`${API_BASE}/employee-leaves/batch`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({list:leaveList}) }); const result = await res.json(); if (!result.ok) { totalSkip += leaveList.length; allSkipList.push("[員工假期]批量匯入失敗："+result.msg); } else if (result.fail > 0) { totalSuccess -= result.fail; totalSkip += result.fail; } } catch(err) { totalSkip += leaveList.length; allSkipList.push("[員工假期]批量匯入失敗："+err.message); }
                         }
                     }
             }
-            for (const rName of allNewRooms) { try { const color = generateRandomRoomColor(); await fetch(`${API_BASE}/rooms`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.[...]
-            for (const eName of allNewEmps) { try { await fetch(`${API_BASE}/employees`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({name:eName}) }); } catch(e)[...]
+            for (const rName of allNewRooms) { try { const color = generateRandomRoomColor(); await fetch(`${API_BASE}/rooms`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({name:rName,short:'',colorData:JSON.stringify(color)}) }); } catch(e) {} }
+            for (const eName of allNewEmps) { try { await fetch(`${API_BASE}/employees`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({name:eName}) }); } catch(e) {} }
 
             await loadAllData();
             await loadHolidays(new Date().getFullYear());
@@ -1261,7 +1275,7 @@ document.querySelectorAll('.short-input').forEach(input=>{
                 const d = document.createElement('div');
                 d.style.cssText='padding:6px 0;border-bottom:1px solid #eee;';
                 const time = r.created_at ? new Date(r.created_at).toLocaleString('zh-TW') : '';
-                d.innerHTML = `<span style="color:#888;font-size:11px;">${time}</span> <b>${r.action||''}</b> <span style="color:#555;">${r.target_type||''} ${r.target_name||''}</span> <span style="co[...]
+                d.innerHTML = `<span style="color:#888;font-size:11px;">${time}</span> <b>${r.action||''}</b> <span style="color:#555;">${r.target_type||''} ${r.target_name||''}</span> <span style="color:#999;font-size:11px;">by ${r.operator||'系統'}</span>`;
                 logsWrap.appendChild(d);
             });
             logsOffset += rows.length;
@@ -1611,7 +1625,7 @@ function renderActivitySearchGroups(groups) {
             <td><div class="act-group-bar-wrap"><div class="act-group-bar"><span style="width:${pct}%"></span></div></div></td>
         </tr>`;
     }).join('');
-    wrap.innerHTML = `<table class="act-search-table"><thead><tr><th style="width:56px;">筆數</th><th>活動名稱</th><th style="width:120px;">佔比</th></tr></thead><tbody>${allRow}${rows}</tbody[...]
+    wrap.innerHTML = `<table class="act-search-table"><thead><tr><th style="width:56px;">筆數</th><th>活動名稱</th><th style="width:120px;">佔比</th></tr></thead><tbody>${allRow}${rows}</tbody></table>`;
 
     wrap.querySelectorAll('tbody tr').forEach(tr => {
         tr.addEventListener('click', () => {
@@ -1644,7 +1658,7 @@ function renderActivitySearchDetails(list) {
             <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(ev.note || '')}">${escapeHtml(ev.note || '')}</td>
         </tr>`;
     }).join('');
-    wrap.innerHTML = `<table class="act-search-table"><thead><tr><th>日期</th><th>活動名稱</th><th>員工</th><th>房間</th><th>時間</th><th>備註</th></tr></thead><tbody>${rows}</tbody></ta[...]
+    wrap.innerHTML = `<table class="act-search-table"><thead><tr><th>日期</th><th>活動名稱</th><th>員工</th><th>房間</th><th>時間</th><th>備註</th></tr></thead><tbody>${rows}</tbody></table>`;
 
     wrap.querySelectorAll('tbody tr').forEach(tr => {
         tr.addEventListener('click', () => {
@@ -1690,7 +1704,7 @@ function runActivitySearch() {
         if (!keyword.trim()) {
             summaryEl.innerHTML = '請輸入活動名稱關鍵字再搜尋';
         } else {
-            summaryEl.innerHTML = `「<strong>${escapeHtml(keyword.trim())}</strong>」在 <strong>${getActivitySearchRangeLabel(range)}</strong> 共命中 <strong>${list.length}</strong> 筆預約、[...]
+            summaryEl.innerHTML = `「<strong>${escapeHtml(keyword.trim())}</strong>」在 <strong>${getActivitySearchRangeLabel(range)}</strong> 共命中 <strong>${list.length}</strong> 筆預約、<strong>${groups.length}</strong> 種名稱組合`;
         }
     }
 
@@ -1857,7 +1871,7 @@ function renderMonthView() {
             const style = getRoomStyle(ev.room);
             const dispRoom = getCompactRoomText(ev.room);
             const prefix = isOnEndDate ? '[跨日] ' : '';
-            html += `<div class="event-label" data-idx="${index}" style="background-color:${style.label};color:#fff;font-size:11px;line-height:1.3;padding:2px 4px;border-radius:3px;margin:1px 0;overfl[...]
+            html += `<div class="event-label" data-idx="${index}" style="background-color:${style.label};color:#fff;font-size:11px;line-height:1.3;padding:2px 4px;border-radius:3px;margin:1px 0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;width:100%;box-sizing:border-box;cursor:pointer;"><strong>${ev.startTime}-${ev.endTime}</strong> ${prefix}${ev.name} · ${dispRoom}</div>`;
         });
 
         // todos
@@ -1873,7 +1887,7 @@ function renderMonthView() {
                 if (timeStr && todo.endTime) timeStr += '-' + todo.endTime;
                 let dispRoom = todo.room ? getCompactRoomText(todo.room) : '';
                 const empStr = todo.employee ? todo.employee : '';
-                html += `<div class="event-label todo-label" data-todo-id="${todo.id}" style="background-color:#fff8e1;color:#5d4037;font-size:11px;line-height:1.3;padding:2px 4px;border-radius:3px;ma[...]
+                html += `<div class="event-label todo-label" data-todo-id="${todo.id}" style="background-color:#fff8e1;color:#5d4037;font-size:11px;line-height:1.3;padding:2px 4px;border-radius:3px;margin:1px 0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;width:100%;box-sizing:border-box;cursor:pointer;border-left:3px solid #f9a825;"><span class="todo-marker"></span><strong>${timeStr}</strong> ${todo.title}` + (dispRoom ? ` · ${dispRoom}` : '') + (empStr ? ` (${empStr})` : '') + '</div>';
             }
         });
 
@@ -1888,7 +1902,7 @@ function renderMonthView() {
             const leaveTypeStr = leave.leaveType ? ` (${leave.leaveType})` : '';
             const isStart = leave.leaveDate === dateStr;
             const prefix = isStart ? '' : '[跨日] ';
-            html += `<div class="event-label leave-label" data-leave-employee="${leave.employee}" data-leave-date="${leave.leaveDate}" style="background-color:#e8f5e9;color:#2e7d32;font-size:11px;line[...]
+            html += `<div class="event-label leave-label" data-leave-employee="${leave.employee}" data-leave-date="${leave.leaveDate}" style="background-color:#e8f5e9;color:#2e7d32;font-size:11px;line-height:1.3;padding:2px 4px;border-radius:3px;margin:1px 0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;width:100%;box-sizing:border-box;cursor:pointer;border-left:3px solid #4caf50;"><span class="leave-square"></span>${prefix}${leave.employee}${leaveTypeStr}</div>`;
         });
 
         if (isMobile && dots.length) {
@@ -1972,7 +1986,7 @@ eventGrid.classList.remove("week-mode");
         startOfWeek.setDate(currentDate.getDate() - currentDate.getDay());
         const endOfWeek = new Date(startOfWeek);
         endOfWeek.setDate(startOfWeek.getDate() + 6);
-        monthYear.innerText = `${months[startOfWeek.getMonth()].substring(0,3)} ${startOfWeek.getDate()} – ${months[endOfWeek.getMonth()].substring(0,3)} ${endOfWeek.getDate()}, ${endOfWeek.getFullY[...]
+        monthYear.innerText = `${months[startOfWeek.getMonth()].substring(0,3)} ${startOfWeek.getDate()} – ${months[endOfWeek.getMonth()].substring(0,3)} ${endOfWeek.getDate()}, ${endOfWeek.getFullYear()}`;
 
         const headerLabels = weekHeader.querySelectorAll('.week-col-label');
         for (let i = 0; i < 7; i++) {
@@ -2013,12 +2027,12 @@ function getDayExtrasHtml(dateStr) {
     let html = '';
     dayTodos.forEach(todo => {
         const timeStr = todo.isAllDay ? '全天' : (todo.startTime || '');
-        html += '<div class="event-label todo-label" style="background-color:#fff8e1;color:#5d4037;font-size:11px;line-height:1.3;padding:2px 4px;border-radius:3px;margin:1px 0;overflow:hidden;white-s[...]
+        html += '<div class="event-label todo-label" style="background-color:#fff8e1;color:#5d4037;font-size:11px;line-height:1.3;padding:2px 4px;border-radius:3px;margin:1px 0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;width:100%;box-sizing:border-box;cursor:pointer;border-left:3px solid #f9a825;"><span class="todo-marker"></span> ' + timeStr + ' ' + todo.title + (todo.employee ? ' (' + todo.employee + ')' : '') + '</div>';
     });
     dayLeaves.forEach(leave => {
         const prefix = leave.leaveDate === dateStr ? '' : '[跨日] ';
         const leaveTypeStr = leave.leaveType ? ' (' + leave.leaveType + ')' : '';
-        html += '<div class="event-label leave-label" style="background-color:#e8f5e9;color:#2e7d32;font-size:11px;line-height:1.3;padding:2px 4px;border-radius:3px;margin:1px 0;overflow:hidden;white-[...]
+        html += '<div class="event-label leave-label" style="background-color:#e8f5e9;color:#2e7d32;font-size:11px;line-height:1.3;padding:2px 4px;border-radius:3px;margin:1px 0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;width:100%;box-sizing:border-box;cursor:pointer;border-left:3px solid #4caf50;"><span class="leave-square"></span> ' + prefix + leave.employee + leaveTypeStr + '</div>';
     });
     return html;
 }
@@ -2264,6 +2278,19 @@ function openBookingForm(dateStr, index = -1) {
     const roomSelect = document.getElementById('roomSelect');
     roomSelect.innerHTML = "";
 
+    // 動態添加日期選擇器（如果不存在）
+    let dateInput = document.getElementById('eventDate');
+    if (!dateInput) {
+        const formBody = document.querySelector('.add-event-body');
+        const dateGroup = document.createElement('div');
+        dateGroup.className = 'input-group';
+        dateGroup.innerHTML = '<label>日期</label><input type="date" id="eventDate" />';
+        formBody.insertBefore(dateGroup, formBody.firstChild);
+        dateInput = document.getElementById('eventDate');
+    }
+    // 設置日期輸入框的值
+    dateInput.value = dateStr;
+
     // 動態渲染房間下拉選項
     roomList.forEach(roomItem => {
         const opt = document.createElement('option');
@@ -2355,16 +2382,6 @@ function openBookingForm(dateStr, index = -1) {
         }
     };
 
-    // 新增：事件日期欄位（對應 index.html 裡的 #eventDate）
-    const eventDateEl = document.getElementById('eventDate');
-    if (eventDateEl) {
-        eventDateEl.value = dateStr || getTodayStr();
-        eventDateEl.onchange = () => {
-            selectedDateStr = eventDateEl.value;
-            try { selectedCalendarDate = new Date(selectedDateStr + 'T00:00:00'); } catch(e) {}
-        };
-    }
-
     if (index === -1) {
         const isPaste = pasteRequested && copiedEvent;
         formTitle.innerText = isPaste ? `新增預約（已貼上）(${dateStr})` : `新增預約 (${dateStr})`;
@@ -2397,10 +2414,6 @@ function openBookingForm(dateStr, index = -1) {
             } else if (roomList.length > 0) {
                 roomSelect.value = roomList[0].name;
             }
-
-            // 貼上時，eventDate 預設為被指定的 dateStr（openBookingForm 參數）
-            if (eventDateEl) eventDateEl.value = dateStr || getTodayStr();
-
             pasteRequested = false;
         } else {
             if(empList.length > 0){
@@ -2410,12 +2423,9 @@ function openBookingForm(dateStr, index = -1) {
             if(roomList.length > 0){
                 roomSelect.value = roomList[0].name;
             }
-            if (eventDateEl) eventDateEl.value = dateStr || getTodayStr();
         }
     } else {
         const ev = eventsData[index];
-        // 編輯時回填日期欄位
-        if (eventDateEl) eventDateEl.value = ev.date;
         formTitle.innerText = `編輯預約 (${dateStr})`;
         document.getElementById("eventTitle").value = ev.name;
         document.getElementById("employeeName").value = ev.employee;
@@ -2511,11 +2521,9 @@ bookBtn.onclick = async (e) => {
     const room = cleanStr(roomRaw);
     const startTime = cleanTime(startTimeRaw);
     const endTime = cleanTime(endTimeRaw);
-
-    // 取得日期：優先使用表單內的 eventDate（讓使用者可以在編輯時改日期）
-    const eventDateEl = document.getElementById('eventDate');
-    const date = eventDateEl && eventDateEl.value ? cleanStr(eventDateEl.value) : cleanStr(selectedDateStr);
-
+    // 使用日期輸入框的值，讓用戶可以修改日期
+    const dateInput = document.getElementById('eventDate');
+    const date = dateInput ? cleanStr(dateInput.value) : cleanStr(selectedDateStr);
     const note = document.getElementById("eventNote").value.trim();
     console.log("[BOOK] cleaned:", {name, employee, room, startTime, endTime, date});
 
@@ -2585,8 +2593,7 @@ bookBtn.onclick = async (e) => {
             const evId = eventsData[currentViewIndex].id;
             console.log("[BOOK] PUT edit id=", evId);
             saved = await updateReservation(evId, newEv);
-            // 以 id 替換原陣列中的該筆（避免 index 因改日期導致位置不符）
-            eventsData = eventsData.map(e => e.id === evId ? saved : e);
+            eventsData[currentViewIndex] = saved;
         } else {
             console.log("[BOOK] POST new");
             saved = await createReservation(newEv);
@@ -2651,7 +2658,7 @@ function getFilterEvents(range){
         if (inRange(todo.startDate)) list.push({ ...todo, _type: 'todo', name: todo.title, date: todo.startDate, startTime: todo.startTime || '', endTime: todo.endTime || '' });
     });
     if (typeof leavesData !== 'undefined') leavesData.forEach(leave => {
-        if (inRange(leave.leaveDate)) list.push({ ...leave, _type: 'leave', name: leave.employee + ' 休假' + (leave.leaveType ? '(' + leave.leaveType + ')' : ''), employee: leave.employee, date: lea[...]
+        if (inRange(leave.leaveDate)) list.push({ ...leave, _type: 'leave', name: leave.employee + ' 休假' + (leave.leaveType ? '(' + leave.leaveType + ')' : ''), employee: leave.employee, date: leave.leaveDate, startTime: '', endTime: '' });
     });
     // 套用員工/房間篩選
     if (filterEmployee) list = list.filter(ev => ev.employee === filterEmployee);
@@ -3438,7 +3445,7 @@ function renderRoomChips() {
     const wrap = document.getElementById('roomChips');
     if (!wrap) return;
     const allRooms = [...roomList];
-    let html = `<button class="room-chip${filterRooms.length === 0 ? ' active' : ''}" data-room="" style="border-left:3px solid #ccc;"><span class="chip-dot" style="background:#ccc;"></span>全部</bu[...]
+    let html = `<button class="room-chip${filterRooms.length === 0 ? ' active' : ''}" data-room="" style="border-left:3px solid #ccc;"><span class="chip-dot" style="background:#ccc;"></span>全部</button>`;
     allRooms.forEach(r => {
         const style = getRoomStyle(r.name);
         const active = filterRooms.includes(r.name) ? ' active' : '';
