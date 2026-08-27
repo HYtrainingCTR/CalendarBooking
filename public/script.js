@@ -1119,6 +1119,10 @@ roomList.forEach((roomItem, idx) => {
     const div = document.createElement('div');
     div.className = 'list-item';
     div.innerHTML = `
+        <div style="display:flex;align-items:center;gap:8px;">
+            <button data-type="move-up" data-idx="${idx}" class="move-btn" title="上移" ${idx === 0 ? 'disabled' : ''}><i class="fa-solid fa-chevron-up"></i></button>
+            <button data-type="move-down" data-idx="${idx}" class="move-btn" title="下移" ${idx === roomList.length - 1 ? 'disabled' : ''}><i class="fa-solid fa-chevron-down"></i></button>
+        </div>
         <div style="display:flex;flex-direction:column;gap:4px;flex:1;">
             <span>全名：${roomItem.name}</span>
             <div style="display:flex;align-items:center;gap:6px;">
@@ -1146,6 +1150,46 @@ document.querySelectorAll('.short-input').forEach(input=>{
         updateView();
     }
 })
+
+// 綁定上移/下移按鈕
+document.querySelectorAll('.move-btn').forEach(btn => {
+    btn.onclick = async (e) => {
+        if (!clickGuard(btn)) return;
+        const type = btn.dataset.type;
+        const idx = Number(btn.dataset.idx);
+        
+        if (type === 'move-up' && idx > 0) {
+            // 交換位置
+            [roomList[idx], roomList[idx - 1]] = [roomList[idx - 1], roomList[idx]];
+            await saveRoomOrder();
+        } else if (type === 'move-down' && idx < roomList.length - 1) {
+            // 交換位置
+            [roomList[idx], roomList[idx + 1]] = [roomList[idx + 1], roomList[idx]];
+            await saveRoomOrder();
+        }
+        
+        renderSettingLists();
+        updateView();
+    };
+});
+
+// 保存房間排序到後端
+async function saveRoomOrder() {
+    try {
+        const roomIds = roomList.map(r => r.id);
+        const res = await fetch(`${API_BASE}/rooms/reorder`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ roomIds })
+        });
+        const result = await res.json();
+        if (!result.ok) {
+            console.error('保存房間排序失敗:', result.msg);
+        }
+    } catch (err) {
+        console.error('保存房間排序失敗:', err);
+    }
+}
 
     // --- 員工列表 ---
     empListWrap.innerHTML = "";
@@ -4010,18 +4054,34 @@ function editTodoItem(todo) {
             const finalEndDate = endDate || leaveDate;
             if (finalEndDate < leaveDate) return alert('結束日期不能早於開始日期');
             try {
-                const res = await fetch(`${API_BASE}/employee-leaves`, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ employee, leaveDate, endDate: finalEndDate, leaveType })
-                });
+                let res;
+                if (currentEditingLeaveId) {
+                    // 編輯模式
+                    res = await fetch(`${API_BASE}/employee-leaves/${currentEditingLeaveId}`, {
+                        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ employee, leaveDate, endDate: finalEndDate, leaveType })
+                    });
+                } else {
+                    // 新增模式
+                    res = await fetch(`${API_BASE}/employee-leaves`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ employee, leaveDate, endDate: finalEndDate, leaveType })
+                    });
+                }
                 const json = await res.json();
                 if (!json.ok) return alert(json.msg);
+                
+                // 重置表單
+                currentEditingLeaveId = null;
+                document.getElementById('leaveEmployee').value = '';
                 document.getElementById('leaveStartDate').value = getTodayStr();
                 document.getElementById('leaveEndDate').value = getTodayStr();
                 document.getElementById('leaveStartDate').dataset.prev = getTodayStr();
                 document.getElementById('leaveType').value = '';
+                addLeaveBtn.textContent = '新增員工假期';
+                
                 await loadLeaves(); if (window._renderLeaves) window._renderLeaves(); updateView();
-            } catch (err) { alert('新增失敗：' + err.message); }
+            } catch (err) { alert(currentEditingLeaveId ? '更新失敗：' : '新增失敗：' + err.message); }
         };
     }
 
@@ -4080,10 +4140,55 @@ function showLeaveDetail(leave) {
     };
     document.getElementById('btnEditTodoDetail').onclick = () => {
         modal.classList.remove("active");
+        // 打開假期表單並填充數據進行編輯
+        openLeaveForm(leave);
     };
     document.getElementById('btnCloseTodoDetail').onclick = () => modal.classList.remove("active");
     modal.onclick = (e) => { if (e.target === modal) modal.classList.remove("active"); };
     modal.classList.add("active");
+}
+
+// 打開假期表單（支持新增和編輯模式）
+let currentEditingLeaveId = null;
+function openLeaveForm(leave = null) {
+    const todosModal = document.getElementById('todosModal');
+    const addLeaveBtn = document.getElementById('addLeaveBtn');
+    
+    // 切換到假期 tab
+    document.querySelectorAll('.todo-tab').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.dataset.tab === 'leaves') {
+            btn.classList.add('active');
+            btn.style.color = 'var(--primary-color)';
+            btn.style.borderBottom = '2px solid var(--primary-color)';
+        } else {
+            btn.style.color = '#888';
+            btn.style.borderBottom = '2px solid transparent';
+        }
+    });
+    document.getElementById('tabTodos').style.display = 'none';
+    document.getElementById('tabLeaves').style.display = 'block';
+    
+    if (leave) {
+        // 編輯模式：填充數據
+        currentEditingLeaveId = leave.id;
+        document.getElementById('leaveEmployee').value = leave.employee;
+        document.getElementById('leaveStartDate').value = leave.leaveDate;
+        document.getElementById('leaveEndDate').value = leave.endDate || leave.leaveDate;
+        document.getElementById('leaveType').value = leave.leaveType || '';
+        addLeaveBtn.textContent = '更新員工假期';
+    } else {
+        // 新增模式：清空表單
+        currentEditingLeaveId = null;
+        document.getElementById('leaveEmployee').value = '';
+        document.getElementById('leaveStartDate').value = getTodayStr();
+        document.getElementById('leaveEndDate').value = getTodayStr();
+        document.getElementById('leaveStartDate').dataset.prev = getTodayStr();
+        document.getElementById('leaveType').value = '';
+        addLeaveBtn.textContent = '新增員工假期';
+    }
+    
+    todosModal.classList.add('active');
 }
 
 // ====== 側欄收合 ======
