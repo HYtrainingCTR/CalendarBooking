@@ -125,12 +125,18 @@ let roomColorMap = {
 
 // localStorage 使用者自訂配色持久化（僅存使用者手動挑選過的房間）
 const _UC_KEY = 'userColorOverrides';
-function _loadUserOverrides() {
+// 頁面加載時不加載localStorage，等待後端數據加載完成後再處理
+function _loadUserOverrides(backendRoomNames) {
     try {
         const raw = localStorage.getItem(_UC_KEY);
         if (raw) {
             const o = JSON.parse(raw);
-            Object.keys(o).forEach(k => { roomColorMap[k] = o[k]; });
+            // 只對沒有後端顏色數據的房間應用 localStorage 顏色
+            Object.keys(o).forEach(k => { 
+                if (!backendRoomNames.includes(k)) {
+                    roomColorMap[k] = o[k]; 
+                }
+            });
         }
     } catch(e) {}
 }
@@ -142,7 +148,6 @@ function _saveUserOverride(roomName) {
         localStorage.setItem(_UC_KEY, JSON.stringify(o));
     } catch(e) {}
 }
-_loadUserOverrides();
 
 // 頂部「房間」多選篩選下拉選單（全域）
 function buildRoomMultiFilter() {
@@ -577,8 +582,9 @@ async function loadAllData() {
                     body: JSON.stringify({ colorData: JSON.stringify(color) })
                 }).catch(() => {});
             });
-            // API sync 完成後，重新套用使用者自訂配色（確保使用者手動挑選的顏色不被遷移覆蓋）
-            _loadUserOverrides();
+            // API sync 完成後，重新套用使用者自訂配色（只對後端沒有的房間）
+            const backendRoomNames = roomList.map(r => r.name);
+            _loadUserOverrides(backendRoomNames);
         }
 
         // 載入回收站（is_deleted=1 的房間）
@@ -3628,16 +3634,31 @@ if (colorPickerConfirm) {
         const hex = '#' + document.getElementById('pickerHexInput').value.replace('#', '');
         if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return;
         const newColor = { bg: hex + '20', border: hex, label: hex };
-        roomColorMap[roomName] = newColor;
-        _saveUserOverride(roomName);
+        
         const room = roomList.find(r => r.name === roomName);
         if (room && room.id) {
-            fetch(`${API_BASE}/rooms/${room.id}/color`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ colorData: JSON.stringify(newColor) })
-            }).catch(() => {});
+            try {
+                const res = await fetch(`${API_BASE}/rooms/${room.id}/color`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ colorData: JSON.stringify(newColor) })
+                });
+                const result = await res.json();
+                if (!result.ok) {
+                    alert('更新顏色失敗：' + result.msg);
+                    return;
+                }
+                // 後端更新成功後才更新本地顯示
+                roomColorMap[roomName] = newColor;
+            } catch (err) {
+                alert('更新顏色失敗：網絡錯誤');
+                return;
+            }
+        } else {
+            // 如果房間沒有ID（臨時房間），只更新本地
+            roomColorMap[roomName] = newColor;
         }
+        
         document.getElementById('colorPickerModal').classList.remove('active');
         renderRoomChips();
         updateView();
