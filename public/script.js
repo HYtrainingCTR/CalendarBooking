@@ -1134,6 +1134,7 @@ roomList.forEach((roomItem, idx) => {
     `;
     roomListWrap.appendChild(div);
 });
+
 // 綁定縮寫輸入框自動存儲
 document.querySelectorAll('.short-input').forEach(input=>{
     input.onblur = async function(){
@@ -4169,10 +4170,23 @@ function openLeaveForm(leave = null) {
     document.getElementById('tabTodos').style.display = 'none';
     document.getElementById('tabLeaves').style.display = 'block';
     
+    // 確保員工下拉選單已填充
+    if (window._populateLeaveEmployeeDropdown) {
+        window._populateLeaveEmployeeDropdown();
+    }
+    
     if (leave) {
         // 編輯模式：填充數據
         currentEditingLeaveId = leave.id;
-        document.getElementById('leaveEmployee').value = leave.employee;
+        const empSelect = document.getElementById('leaveEmployee');
+        // 確保員工在下拉選單中存在
+        if (!Array.from(empSelect.options).some(o => o.value === leave.employee)) {
+            const opt = document.createElement('option');
+            opt.value = leave.employee;
+            opt.textContent = leave.employee;
+            empSelect.appendChild(opt);
+        }
+        empSelect.value = leave.employee;
         document.getElementById('leaveStartDate').value = leave.leaveDate;
         document.getElementById('leaveEndDate').value = leave.endDate || leave.leaveDate;
         document.getElementById('leaveType').value = leave.leaveType || '';
