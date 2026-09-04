@@ -1135,11 +1135,12 @@ roomList.forEach((roomItem, idx) => {
     roomListWrap.appendChild(div);
 });
 
-// 綁定縮寫輸入框自動存儲
-document.querySelectorAll('.short-input').forEach(input=>{
-    input.onblur = async function(){
-        const idx = Number(this.dataset.idx);
-        const newShort = this.value.trim();
+// 綁定縮寫輸入框自動存儲（使用事件委託）
+roomListWrap.addEventListener('blur', async function(e) {
+    if (e.target.classList.contains('short-input')) {
+        const input = e.target;
+        const idx = Number(input.dataset.idx);
+        const newShort = input.value.trim();
         roomList[idx].short = newShort;
         try {
             await fetch(`${API_BASE}/rooms/${roomList[idx].id}/short`, {
@@ -1150,41 +1151,42 @@ document.querySelectorAll('.short-input').forEach(input=>{
         } catch(e) { console.error("縮寫更新失敗:", e); }
         updateView();
     }
-})
+}, true);
 
-// 綁定上移/下移按鈕
-document.querySelectorAll('.move-btn').forEach(btn => {
-    btn.onclick = async (e) => {
-        if (!clickGuard(btn)) return;
-        const type = btn.dataset.type;
-        const idx = Number(btn.dataset.idx);
-        
-        let success = false;
+// 綁定上移/下移按鈕（使用事件委託）
+roomListWrap.addEventListener('click', async function(e) {
+    const btn = e.target.closest('.move-btn');
+    if (!btn) return;
+    if (!clickGuard(btn)) return;
+    
+    const type = btn.dataset.type;
+    const idx = Number(btn.dataset.idx);
+    
+    let success = false;
+    if (type === 'move-up' && idx > 0) {
+        // 交換位置
+        [roomList[idx], roomList[idx - 1]] = [roomList[idx - 1], roomList[idx]];
+        success = await saveRoomOrder();
+    } else if (type === 'move-down' && idx < roomList.length - 1) {
+        // 交換位置
+        [roomList[idx], roomList[idx + 1]] = [roomList[idx + 1], roomList[idx]];
+        success = await saveRoomOrder();
+    }
+    
+    if (success) {
+        // 重新加載房間列表以確保與後端同步
+        await loadRooms();
+        renderSettingLists();
+        updateView();
+    } else {
+        // 失敗時恢復原始順序
         if (type === 'move-up' && idx > 0) {
-            // 交換位置
             [roomList[idx], roomList[idx - 1]] = [roomList[idx - 1], roomList[idx]];
-            success = await saveRoomOrder();
         } else if (type === 'move-down' && idx < roomList.length - 1) {
-            // 交換位置
             [roomList[idx], roomList[idx + 1]] = [roomList[idx + 1], roomList[idx]];
-            success = await saveRoomOrder();
         }
-        
-        if (success) {
-            // 重新加載房間列表以確保與後端同步
-            await loadRooms();
-            renderSettingLists();
-            updateView();
-        } else {
-            // 失敗時恢復原始順序
-            if (type === 'move-up' && idx > 0) {
-                [roomList[idx], roomList[idx - 1]] = [roomList[idx - 1], roomList[idx]];
-            } else if (type === 'move-down' && idx < roomList.length - 1) {
-                [roomList[idx], roomList[idx + 1]] = [roomList[idx + 1], roomList[idx]];
-            }
-            alert('更新房間順序失敗，請重試');
-        }
-    };
+        alert('更新房間順序失敗，請重試');
+    }
 });
 
 // 保存房間排序到後端
@@ -1957,7 +1959,7 @@ function renderMonthView() {
             const style = getRoomStyle(ev.room);
             const dispRoom = getCompactRoomText(ev.room);
             const prefix = isOnEndDate ? '[跨日] ' : '';
-            html += `<div class="event-label" data-idx="${index}" style="background-color:${style.label};color:#fff;font-size:11px;line-height:1.3;padding:2px 4px;border-radius:3px;margin:1px 0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;width:100%;box-sizing:border-box;cursor:pointer;"><strong>${ev.startTime}-${ev.endTime}</strong> ${prefix}${ev.name} · ${dispRoom}</div>`;
+            html += `<div class="event-label" data-idx="${index}" style="background-color:${style.label};color:#fff;font-size:11px;line-height:1.3;padding:2px 4px;border-radius:3px;margin:1px 0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;width:100%;box-sizing:border-box;cursor:pointer;">${dispRoom} <strong>${ev.startTime}-${ev.endTime}</strong> ${prefix}${ev.name}</div>`;
         });
 
         // todos
@@ -2376,6 +2378,17 @@ function openBookingForm(dateStr, index = -1) {
     }
     // 設置日期輸入框的值
     dateInput.value = dateStr;
+    
+    // 動態添加結束日期選擇器（如果不存在）
+    let endDateInput = document.getElementById('eventEndDate');
+    if (!endDateInput) {
+        const formBody = document.querySelector('.add-event-body');
+        endDateInput = document.getElementById('eventEndDate');
+    }
+    // 設置結束日期輸入框的值
+    if (endDateInput) {
+        endDateInput.value = '';
+    }
 
     // 動態渲染房間下拉選項
     roomList.forEach(roomItem => {
@@ -2518,6 +2531,14 @@ function openBookingForm(dateStr, index = -1) {
         setSelectValue(document.getElementById("startTime"), ev.startTime);
         setSelectValue(document.getElementById("endTime"), ev.endTime);
         document.getElementById("eventNote").value = ev.note || '';
+        
+        // 設置結束日期
+        const endDateInput = document.getElementById('eventEndDate');
+        if (endDateInput && ev.endDate && ev.endDate !== ev.date) {
+            endDateInput.value = ev.endDate;
+        } else if (endDateInput) {
+            endDateInput.value = '';
+        }
 
         // 回填房間下拉
         const optMatch = Array.from(roomSelect.options).find(o => o.value === ev.room);
@@ -2609,9 +2630,11 @@ bookBtn.onclick = async (e) => {
     const endTime = cleanTime(endTimeRaw);
     // 使用日期輸入框的值，讓用戶可以修改日期
     const dateInput = document.getElementById('eventDate');
+    const endDateInput = document.getElementById('eventEndDate');
     const date = dateInput ? cleanStr(dateInput.value) : cleanStr(selectedDateStr);
+    const endDateRaw = endDateInput ? cleanStr(endDateInput.value) : '';
     const note = document.getElementById("eventNote").value.trim();
-    console.log("[BOOK] cleaned:", {name, employee, room, startTime, endTime, date});
+    console.log("[BOOK] cleaned:", {name, employee, room, startTime, endTime, date, endDateRaw});
 
     // 3. 基礎空值攔截
     if (!name || !employee || !room) { console.log("[BOOK] BLOCKED: empty fields"); return alert("活動名稱、員工、房間不能空白"); }
@@ -2626,9 +2649,16 @@ bookBtn.onclick = async (e) => {
         return alert("日期格式非法");
     }
 
-    // 跨日預約：結束時間早於開始時間 → 隔日結束
+    // 處理結束日期
     let endDate = date;
-    if (startTime >= endTime) {
+    if (endDateRaw && /^\d{4}-\d{2}-\d{2}$/.test(endDateRaw)) {
+        // 用戶明確指定了結束日期
+        if (endDateRaw < date) {
+            return alert("結束日期不能早於開始日期");
+        }
+        endDate = endDateRaw;
+    } else if (startTime >= endTime) {
+        // 跨日預約：結束時間早於開始時間 → 隔日結束
         const nextDay = new Date(date + 'T00:00:00');
         nextDay.setDate(nextDay.getDate() + 1);
         endDate = getFormattedDate(nextDay);
