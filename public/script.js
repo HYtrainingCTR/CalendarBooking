@@ -1124,7 +1124,10 @@ roomList.forEach((roomItem, idx) => {
             <button data-type="move-down" data-idx="${idx}" class="move-btn" title="下移" ${idx === roomList.length - 1 ? 'disabled' : ''}><i class="fa-solid fa-chevron-down"></i></button>
         </div>
         <div style="display:flex;flex-direction:column;gap:4px;flex:1;">
-            <span>全名：${roomItem.name}</span>
+            <div style="display:flex;align-items:center;gap:6px;">
+                <label style="font-size:13px;">全名：</label>
+                <input class="name-input" data-idx="${idx}" value="${roomItem.name}" style="padding:4px;flex:1;">
+            </div>
             <div style="display:flex;align-items:center;gap:6px;">
                 <label style="font-size:13px;">縮寫：</label>
                 <input class="short-input" data-idx="${idx}" value="${roomItem.short || ''}" style="padding:4px;flex:1;">
@@ -1135,9 +1138,41 @@ roomList.forEach((roomItem, idx) => {
     roomListWrap.appendChild(div);
 });
 
-// 綁定縮寫輸入框自動存儲（使用事件委託）
+// 綁定房間名稱和縮寫輸入框自動存儲（使用事件委託）
 roomListWrap.addEventListener('blur', async function(e) {
-    if (e.target.classList.contains('short-input')) {
+    if (e.target.classList.contains('name-input')) {
+        const input = e.target;
+        const idx = Number(input.dataset.idx);
+        const newName = input.value.trim();
+        if (!newName) {
+            alert("房間名稱不可空白");
+            input.value = roomList[idx].name;
+            return;
+        }
+        if (newName === roomList[idx].name) return;
+        
+        try {
+            const res = await fetch(`${API_BASE}/rooms/${roomList[idx].id}/name`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name: newName })
+            });
+            const result = await res.json();
+            if (!result.ok) {
+                alert(result.msg);
+                input.value = roomList[idx].name;
+                return;
+            }
+            roomList[idx].name = newName;
+            await loadAllData();
+            renderSettingLists();
+            updateView();
+        } catch(e) { 
+            console.error("房間名稱更新失敗:", e); 
+            alert("房間名稱更新失敗");
+            input.value = roomList[idx].name;
+        }
+    } else if (e.target.classList.contains('short-input')) {
         const input = e.target;
         const idx = Number(input.dataset.idx);
         const newShort = input.value.trim();
