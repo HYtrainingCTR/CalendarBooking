@@ -283,6 +283,19 @@ app.post('/api/rooms', async (req, res) => {
     }
     catch (err) { if (err.message.includes('unique')) return res.json({ ok: false, msg: "房間名稱已存在" }); res.json({ ok: false, msg: err.message }); }
 });
+app.put('/api/rooms/:id/name', async (req, res) => {
+    const { name } = req.body;
+    if (!name) return res.json({ ok: false, msg: "房間名稱不可空白" });
+    try {
+        const check = await query(`SELECT name FROM rooms WHERE id=$1`, [req.params.id]);
+        if (check.rows.length === 0) return res.json({ ok: false, msg: "找不到房間" });
+        const oldName = check.rows[0].name;
+        await query(`UPDATE rooms SET name=$1 WHERE id=$2`, [name, req.params.id]);
+        await logOp('UPDATE_ROOM_NAME', req.params.id, `更新房間名稱: ${oldName} -> ${name}`, req.ip);
+        res.json({ ok: true });
+    }
+    catch (err) { if (err.message.includes('unique')) return res.json({ ok: false, msg: "房間名稱已存在" }); res.json({ ok: false, msg: err.message }); }
+});
 app.put('/api/rooms/:id/short', async (req, res) => {
     try { await query(`UPDATE rooms SET short_name=$1 WHERE id=$2`, [req.body.short||'', req.params.id]); res.json({ ok: true }); }
     catch (err) { res.json({ ok: false, msg: err.message }); }
