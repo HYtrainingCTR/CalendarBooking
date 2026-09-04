@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-  場地及ZOOM預定系統（Calendar Booking System）
+  大月曆預約系統（Calendar Booking System）
   @author Yao Yuxuan
   @date   2026-08
 -->
@@ -124,7 +124,7 @@
     <button id="nextbtn">&#8594;</button>
     <button id="thisMonthBtn" class="this-month-btn" title="回到本月">本月</button>
 
-    
+
     <select id="viewSelect" class="view-select">
       <option value="month">Month</option>
       <option value="week">Week</option>
@@ -224,7 +224,7 @@
 
     <div id="timelineView" class="timeline-container" style="display: none;">
     <div id="weekHeader" class="week-header">
-        <div class="time-gutter"></div> 
+        <div class="time-gutter"></div>
         <div class="week-col-label">Sun</div>
         <div class="week-col-label">Mon</div>
         <div class="week-col-label">Tue</div>
@@ -367,13 +367,19 @@
     </div>
     </div>
     <div class="add-event-body">
-      <div class="input-group">
+        <div class="input-row">
+            <div class="input-group">
+                <label>開始日期</label>
+                <input type="date" id="eventDate" />
+            </div>
+            <div class="input-group">
+                <label>結束日期（選填，跨日預約）</label>
+                <input type="date" id="eventEndDate" />
+            </div>
+        </div>
+        <div class="input-group">
         <label>活動名稱</label>
         <input type="text" id="eventTitle" placeholder="例如：AI 訓練" />
-      </div>
-      <div class="input-group">
-        <label>日期</label>
-        <input type="date" id="eventDate" />
       </div>
       <div class="input-group">
         <label>員工姓名</label>
