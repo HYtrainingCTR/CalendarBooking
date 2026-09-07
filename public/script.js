@@ -95,10 +95,13 @@ let roomList = [];
 let empList = [];
 
 // 篩選狀態
-let filterEmployee = "";
+let filterEmployees = [];
 let filterRooms = [];
 function _isRoomFiltered(room) {
     return filterRooms.length > 0 && !filterRooms.includes(room);
+}
+function _isEmployeeFiltered(employee) {
+    return filterEmployees.length > 0 && !filterEmployees.includes(employee);
 }
 
 const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -147,6 +150,63 @@ function _saveUserOverride(roomName) {
         o[roomName] = roomColorMap[roomName];
         localStorage.setItem(_UC_KEY, JSON.stringify(o));
     } catch(e) {}
+}
+
+// 頂部「員工」多選篩選下拉選單（全域）
+function buildEmployeeMultiFilter() {
+    const btn = document.getElementById('empFilterBtn');
+    const panel = document.getElementById('empFilterPanel');
+    const listEl = document.getElementById('empFilterList');
+    const allCb = document.getElementById('empFilterAll');
+    if (!btn || !panel || !listEl || !allCb) return;
+
+    // 依 empList 重建員工勾選清單
+    listEl.innerHTML = empList.map(e =>
+        `<label class="multi-option"><input type="checkbox" value="${e.name.replace(/"/g, '&quot;')}">${e.name}</label>`
+    ).join('');
+
+    const labelEl = document.getElementById('empFilterLabel');
+
+    function refresh() {
+        listEl.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+            cb.checked = filterEmployees.includes(cb.value);
+        });
+        allCb.checked = filterEmployees.length === 0;
+        labelEl.textContent = filterEmployees.length === 0 ? '全部員工' : `已選 ${filterEmployees.length} 人`;
+        btn.classList.toggle('has-selection', filterEmployees.length > 0);
+    }
+
+    btn.onclick = (e) => {
+        e.stopPropagation();
+        const open = panel.style.display === 'block';
+        panel.style.display = open ? 'none' : 'block';
+    };
+    document.addEventListener('click', (e) => {
+        if (!panel.contains(e.target) && !btn.contains(e.target)) {
+            panel.style.display = 'none';
+        }
+    });
+
+    allCb.onchange = () => {
+        if (allCb.checked) {
+            filterEmployees = [];
+        }
+        refresh();
+        updateView();
+    };
+
+    listEl.addEventListener('change', (e) => {
+        const cb = e.target;
+        if (cb.checked) {
+            if (!filterEmployees.includes(cb.value)) filterEmployees.push(cb.value);
+        } else {
+            filterEmployees = filterEmployees.filter(v => v !== cb.value);
+        }
+        refresh();
+        updateView();
+    });
+
+    refresh();
 }
 
 // 頂部「房間」多選篩選下拉選單（全域）
@@ -617,27 +677,14 @@ async function loadAllData() {
 
 // 初始化篩選下拉選單
 function initFilterDropdowns() {
-    const filterEmp = document.getElementById('filterEmployee');
-    if (filterEmp) {
-        filterEmp.innerHTML = '<option value="">全部員工</option>';
-        empList.forEach(emp => {
-            const opt = document.createElement('option');
-            opt.value = emp.name;
-            opt.textContent = emp.name;
-            filterEmp.appendChild(opt);
-        });
-        filterEmp.onchange = (e) => {
-            filterEmployee = e.target.value;
-            updateView();
-        };
-    }
+    buildEmployeeMultiFilter();
     buildRoomMultiFilter();
 }
 
 // 取得篩選後的事件列表
 function getFilteredData() {
     return eventsData.filter(ev => {
-        if (filterEmployee && ev.employee !== filterEmployee) return false;
+        if (_isEmployeeFiltered(ev.employee)) return false;
         if (_isRoomFiltered(ev.room)) return false;
         return true;
     });
@@ -1985,7 +2032,7 @@ function renderMonthView() {
             const isOnStartDate = ev.date === dateStr;
             const isOnEndDate = evEndDate === dateStr && evEndDate !== ev.date;
             if (!isOnStartDate && !isOnEndDate) return;
-            if (filterEmployee && ev.employee !== filterEmployee) return;
+            if (_isEmployeeFiltered(ev.employee)) return;
             if (_isRoomFiltered(ev.room)) return;
             if (isMobile) {
                 dots.push({ color: getRoomStyle(ev.room).label, title: ev.name });
@@ -2000,7 +2047,7 @@ function renderMonthView() {
         // todos
         todosData.forEach((todo) => {
             if (todo.startDate <= dateStr && todo.endDate >= dateStr) {
-                if (filterEmployee && todo.employee !== filterEmployee) return;
+                if (_isEmployeeFiltered(todo.employee)) return;
                 if (_isRoomFiltered(todo.room)) return;
                 if (isMobile) {
                     dots.push({ color: '#f9a825', title: todo.title });
@@ -2017,7 +2064,7 @@ function renderMonthView() {
         // leaves
         const dayLeaves = getLeavesForDate(dateStr);
         dayLeaves.forEach(leave => {
-            if (filterEmployee && leave.employee !== filterEmployee) return;
+            if (_isEmployeeFiltered(leave.employee)) return;
             if (isMobile) {
                 dots.push({ color: '#4caf50', title: leave.employee + (leave.leaveType ? ' (' + leave.leaveType + ')' : '') });
                 return;
@@ -2138,12 +2185,12 @@ function createDayColumn(dateStr) {
 
 function getDayExtrasHtml(dateStr) {
     const dayTodos = (todosData || []).filter(todo => {
-        if (filterEmployee && todo.employee !== filterEmployee) return false;
+        if (_isEmployeeFiltered(todo.employee)) return false;
         if (_isRoomFiltered(todo.room)) return false;
         return todo.startDate <= dateStr && todo.endDate >= dateStr;
     });
     const dayLeaves = getLeavesForDate ? getLeavesForDate(dateStr).filter(l => {
-        if (filterEmployee && l.employee !== filterEmployee) return false;
+        if (_isEmployeeFiltered(l.employee)) return false;
         return true;
     }) : [];
     if (dayTodos.length === 0 && dayLeaves.length === 0) return '';
@@ -2166,7 +2213,7 @@ function renderEventsIntoColumn(columnElement, dateStr) {
         const isOnStart = ev.date === dateStr;
         const isOnEnd = ev.endDate && ev.endDate === dateStr && ev.endDate !== ev.date;
         if (!isOnStart && !isOnEnd) return false;
-        if (filterEmployee && ev.employee !== filterEmployee) return false;
+        if (_isEmployeeFiltered(ev.employee)) return false;
         if (_isRoomFiltered(ev.room)) return false;
         return true;
     });
@@ -2812,7 +2859,7 @@ function getFilterEvents(range){
         if (inRange(leave.leaveDate)) list.push({ ...leave, _type: 'leave', name: leave.employee + ' 休假' + (leave.leaveType ? '(' + leave.leaveType + ')' : ''), employee: leave.employee, date: leave.leaveDate, startTime: '', endTime: '' });
     });
     // 套用員工/房間篩選
-    if (filterEmployee) list = list.filter(ev => ev.employee === filterEmployee);
+    if (filterEmployees.length) list = list.filter(ev => filterEmployees.includes(ev.employee));
     if (filterRooms.length) list = list.filter(ev => filterRooms.includes(ev.room));
     list.sort((a,b)=>{
         const d1 = a.date + " " + a.startTime;
@@ -2903,7 +2950,7 @@ function getFilteredTodos(range){
         const we = getFormattedDate(endOfWeek);
         list = list.filter(t => t.startDate <= we && t.endDate >= ws);
     }
-    if(filterEmployee) list = list.filter(t => t.employee === filterEmployee);
+    if(filterEmployees.length) list = list.filter(t => filterEmployees.includes(t.employee));
     if(filterRooms.length) list = list.filter(t => filterRooms.includes(t.room));
     return list;
 }
@@ -2956,7 +3003,7 @@ function getFilteredLeaves(range){
         const we = getFormattedDate(endOfWeek);
         list = list.filter(l => l.leaveDate <= we && (l.endDate || l.leaveDate) >= ws);
     }
-    if(filterEmployee) list = list.filter(l => l.employee === filterEmployee);
+    if(filterEmployees.length) list = list.filter(l => filterEmployees.includes(l.employee));
     return list;
 }
 
@@ -3040,12 +3087,12 @@ async function exportPdf(range){
         const pageH = doc.internal.pageSize.getHeight();
         const monthsEN = ["January","February","March","April","May","June","July","August","September","October","November","December"];
         const colW = pageW / 7;
-        const headerH = 8;
-        const titleH = 10;
+        const headerH = 10;
+        const titleH = 15;
         const margin = 4;
         const weekdays = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-        const itemFont = 7;
-        const lineH = 3.6;
+        const itemFont = 8;
+        const lineH = 4;
         const availH = pageH - margin * 2 - titleH - headerH;
 
         // 每個日期格：與月曆 UI 一致的涵蓋判定（跨日/區間都算），換行後全數列出
@@ -3115,19 +3162,19 @@ async function exportPdf(range){
                     if(holiday) items.push({ kind: 'holiday', text: holiday.name });
                     (eventsData || []).forEach(ev => {
                         if (ev.date !== dateStr) return;
-                        if (filterEmployee && ev.employee !== filterEmployee) return;
+                        if (_isEmployeeFiltered(ev.employee)) return;
                         if (_isRoomFiltered(ev.room)) return;
                         items.push({ kind: 'event', text: `${ev.startTime} ${ev.name} - ${ev.room}`, room: ev.room });
                     });
                     (todosData || []).forEach(todo => {
-                        if (filterEmployee && todo.employee !== filterEmployee) return;
+                        if (_isEmployeeFiltered(todo.employee)) return;
                         if (_isRoomFiltered(todo.room)) return;
                         if (todo.startDate <= dateStr && todo.endDate >= dateStr) {
                             items.push({ kind: 'todo', text: (todo.startTime || '') + ' ' + todo.title });
                         }
                     });
                     (leavesData || []).forEach(leave => {
-                        if (filterEmployee && leave.employee !== filterEmployee) return;
+                        if (_isEmployeeFiltered(leave.employee)) return;
                         if (leave.leaveDate <= dateStr && (leave.endDate || leave.leaveDate) >= dateStr) {
                             items.push({ kind: 'leave', text: leave.employee + ' 休假' + (leave.leaveType ? '(' + leave.leaveType + ')' : '') });
                         }
@@ -3189,9 +3236,11 @@ async function exportPdf(range){
 
             pageRows.forEach((rowIndexes, pi) => {
                 if(pi > 0) doc.addPage();
-                doc.setFontSize(16);
+                doc.setFontSize(20);
+                doc.setFont(undefined, 'bold');
                 doc.setTextColor(51);
-                doc.text(`${monthsEN[m]} ${targetYear}`, pageW / 2, margin + 7, { align: 'center' });
+                doc.text(`${monthsEN[m]} ${targetYear}`, pageW / 2, margin + 10, { align: 'center' });
+                doc.setFont(undefined, 'normal');
                 doc.setDrawColor(74, 144, 226);
                 doc.setLineWidth(0.5);
                 doc.line(margin, margin + titleH - 2, pageW - margin, margin + titleH - 2);
@@ -3258,14 +3307,14 @@ async function exportPdf(range){
         const allDayItemsByDay = weekDates.map(dateStr => {
             const items = [];
             (todosData || []).forEach(todo => {
-                if (filterEmployee && todo.employee !== filterEmployee) return;
+                if (_isEmployeeFiltered(todo.employee)) return;
                 if (_isRoomFiltered(todo.room)) return;
                 if (todo.startDate <= dateStr && todo.endDate >= dateStr) {
                     items.push({ _type: 'todo', name: todo.title, startTime: todo.startTime || '' });
                 }
             });
             (leavesData || []).forEach(leave => {
-                if (filterEmployee && leave.employee !== filterEmployee) return;
+                if (_isEmployeeFiltered(leave.employee)) return;
                 if (leave.leaveDate <= dateStr && (leave.endDate || leave.leaveDate) >= dateStr) {
                     items.push({ _type: 'leave', name: leave.employee + ' 休假' + (leave.leaveType ? '(' + leave.leaveType + ')' : ''), startTime: '' });
                 }
