@@ -121,9 +121,7 @@ const ROOM_PALETTE = [
 // 注意：Classroom 1 / Classroom 2 已永久刪除，不再由 server 重新建立；以下兩項僅作為「舊預約」的穩定配色參考
 let roomColorMap = {
   "Classroom 1": { bg: "#4e749220", border: "#4e7492", label: "#4e7492" },
-  "Classroom 2": { bg: "#96793b20", border: "#96793b", label: "#96793b" },
-  "VIP Room":    { bg: "#9e516720", border: "#9e5167", label: "#9e5167" },
-  "EDS":         { bg: "#3f757120", border: "#3f7571", label: "#3f7571" }
+  "Classroom 2": { bg: "#96793b20", border: "#96793b", label: "#96793b" }
 };
 
 // localStorage 使用者自訂配色持久化（僅存使用者手動挑選過的房間）
@@ -331,14 +329,6 @@ function generateRandomRoomColor(roomName) {
 function getRoomStyle(roomName) {
     // 用戶自訂 / 已持久化的配色優先（含色彩選擇器修改過的顏色）
     if (roomColorMap[roomName]) return roomColorMap[roomName];
-    // 內建房間初始預設（僅在 roomColorMap 尚無此房間時生效）
-    const builtInRooms = {
-        "VIP Room":    { bg: "#9e516720", border: "#9e5167", label: "#9e5167" },
-        "EDS":         { bg: "#3f757120", border: "#3f7571", label: "#3f7571" }
-    };
-    if(builtInRooms[roomName]){
-        return builtInRooms[roomName];
-    }
 
     if (!roomColorMap[roomName]) {
         const color = generateRandomRoomColor(roomName);
@@ -634,11 +624,10 @@ async function loadAllData() {
                     try { roomColorMap[r.name] = JSON.parse(r.colorData); } catch(e) {}
                 }
             });
-            // 遷移：舊版高飽和色系一律重配成柔和低飽和色系，並持久化（內建房間由 getRoomStyle 覆蓋，不在此處理）
+            // 遷移：舊版高飽和色系一律重配成柔和低飽和色系，並持久化
             const paletteSet = new Set(ROOM_PALETTE.map(c => c.toLowerCase()));
-            const builtInNames = ['VIP Room', 'EDS'];
             roomList.forEach(r => {
-                if (!r.colorData || builtInNames.includes(r.name)) return;
+                if (!r.colorData) return;
                 let c; try { c = JSON.parse(r.colorData); } catch(e) { return; }
                 if (!c || !c.border || paletteSet.has(String(c.border).toLowerCase())) return;
                 const color = generateRandomRoomColor(r.name);
