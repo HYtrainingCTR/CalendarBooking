@@ -134,10 +134,13 @@ function _loadUserOverrides(backendRoomNames) {
         const raw = localStorage.getItem(_UC_KEY);
         if (raw) {
             const o = JSON.parse(raw);
-            // 只對沒有後端顏色數據的房間應用 localStorage 顏色
-            Object.keys(o).forEach(k => { 
-                if (!backendRoomNames.includes(k)) {
-                    roomColorMap[k] = o[k]; 
+            // 只對後端沒有顏色數據的房間應用 localStorage 顏色
+            // 後端顏色始終優先於 localStorage
+            Object.keys(o).forEach(k => {
+                const room = roomList.find(r => r.name === k);
+                // 只有當後端沒有該房間，或者後端該房間沒有顏色數據時，才使用 localStorage
+                if (!room || !room.colorData) {
+                    roomColorMap[k] = o[k];
                 }
             });
         }
@@ -147,8 +150,12 @@ function _saveUserOverride(roomName) {
     try {
         const raw = localStorage.getItem(_UC_KEY);
         const o = raw ? JSON.parse(raw) : {};
-        o[roomName] = roomColorMap[roomName];
-        localStorage.setItem(_UC_KEY, JSON.stringify(o));
+        // 只有當後端沒有該房間的顏色數據時才保存到 localStorage
+        const room = roomList.find(r => r.name === roomName);
+        if (!room || !room.colorData) {
+            o[roomName] = roomColorMap[roomName];
+            localStorage.setItem(_UC_KEY, JSON.stringify(o));
+        }
     } catch(e) {}
 }
 
@@ -3847,6 +3854,15 @@ if (colorPickerConfirm) {
                 }
                 // 後端更新成功後才更新本地顯示
                 roomColorMap[roomName] = newColor;
+                // 清除 localStorage 中的舊顏色，確保後端顏色優先
+                try {
+                    const raw = localStorage.getItem(_UC_KEY);
+                    if (raw) {
+                        const o = JSON.parse(raw);
+                        delete o[roomName];
+                        localStorage.setItem(_UC_KEY, JSON.stringify(o));
+                    }
+                } catch(e) {}
             } catch (err) {
                 alert('更新顏色失敗：網絡錯誤');
                 return;
@@ -4029,13 +4045,28 @@ function renderTodos() {
     const wrap = document.getElementById('todoListWrap');
     if (!wrap) return;
     wrap.innerHTML = '';
-    if (todosData.length === 0) {
+    
+    // 過濾掉員工假期期間的待辦事項
+    const filteredTodos = todosData.filter(todo => {
+        if (!todo.employee) return true;
+        // 檢查該員工在待辦事項日期範圍內是否有假期
+        const hasLeave = leavesData.some(leave => {
+            if (leave.employee !== todo.employee) return false;
+            const leaveStart = leave.leaveDate;
+            const leaveEnd = leave.endDate || leave.leaveDate;
+            // 檢查待辦事項日期範圍與假期日期範圍是否有重疊
+            return todo.startDate <= leaveEnd && todo.endDate >= leaveStart;
+        });
+        return !hasLeave;
+    });
+    
+    if (filteredTodos.length === 0) {
         wrap.innerHTML = '<div style="color:#888;text-align:center;padding:12px;">暫無待辦事項</div>';
         return;
     }
     // Group by title+startTime+endTime+room+employee+isAllDay
     const groups = {};
-    todosData.forEach(todo => {
+    filteredTodos.forEach(todo => {
         const key = [todo.title, todo.startTime||'', todo.endTime||'', todo.room||'', todo.employee||'', todo.isAllDay?'1':'0'].join('|');
         if (!groups[key]) groups[key] = [];
         groups[key].push(todo);
